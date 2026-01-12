@@ -22,12 +22,12 @@ aug_pipeline = A.Compose([
 
     # Resize preserving aspect ratio
     A.LongestMaxSize(max_size=target_size),
-    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT, value=0, mask_value=0)
+    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT)
 ])
 
 resize_pipeline = A.Compose([
     A.LongestMaxSize(max_size=target_size),
-    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT, value=0, mask_value=0)
+    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT)
 ])
 
 def load_coco_data(root_dir):
@@ -76,6 +76,11 @@ def create_dataset(split_name, mode='original_resized'):
         current_multiplier = 1
         pipeline = resize_pipeline
 
+    csv_save_path = os.path.join(base_out, f'{split_name}.csv')
+    if os.path.exists(csv_save_path):
+        print(f"Skipping {split_name} ({mode}): Output CSV already exists")
+        return
+    
     split_out_dir = os.path.join(base_out, split_name)
     img_out_dir = os.path.join(split_out_dir, 'images')
     mask_out_dir = os.path.join(split_out_dir, 'masks')
@@ -130,7 +135,7 @@ def create_dataset(split_name, mode='original_resized'):
             save_img_path = os.path.join(img_out_dir, new_filename)
             save_mask_path = os.path.join(mask_out_dir, new_maskname)
 
-            # Save 
+            # Save
             print(f"Saving {mode} images and masks")
             cv2.imwrite(save_img_path, cv2.cvtColor(trans_img, cv2.COLOR_RGB2BGR))
             cv2.imwrite(save_mask_path, trans_mask * 255)
@@ -141,11 +146,12 @@ def create_dataset(split_name, mode='original_resized'):
                 'original_source': filename
             })
     
-    csv_save_path = os.path.join(base_out, f'{split_name}.csv')
-    
     pd.DataFrame(new_csv_rows).to_csv(csv_save_path, index=False)
     print(f"Saved CSV to {csv_save_path}")
 
 if __name__ == "__main__":
 
     create_dataset('train', mode='augmented')
+    # create_dataset('train', mode='original_resized')
+    # create_dataset('valid', mode='original_resized')
+    # create_dataset('test',  mode='original_resized')
