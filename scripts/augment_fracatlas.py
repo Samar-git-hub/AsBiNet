@@ -151,7 +151,7 @@ def create_dataset(split_name, mode='original_resized'):
 
 if __name__ == "__main__":
 
-    create_dataset('train', mode='augmented')
-    # create_dataset('train', mode='original_resized')
-    # create_dataset('valid', mode='original_resized')
-    # create_dataset('test',  mode='original_resized')
+    # create_dataset('train', mode='augmented')
+    create_dataset('train', mode='original_resized')
+    create_dataset('valid', mode='original_resized')
+    create_dataset('test',  mode='original_resized')
