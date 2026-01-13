@@ -149,9 +149,44 @@ def create_dataset(split_name, mode='original_resized'):
     pd.DataFrame(new_csv_rows).to_csv(csv_save_path, index=False)
     print(f"Saved CSV to {csv_save_path}")
 
+def generate_original_masks():
+    print("Generating Original Resolution Masks")
+
+    mask_out_dir = os.path.join(root_dir, 'masks', 'Fractured')
+    os.makedirs(mask_out_dir, exist_ok=True)
+
+    id_to_file, id_to_anns = load_coco_data(root_dir)
+
+    for img_id, filename in tqdm(id_to_file.items(), total=len(id_to_file)):
+
+        save_path = os.path.join(mask_out_dir, f"{os.path.splitext(filename)[0]}.png")
+        if os.path.exists(save_path):
+            continue
+
+        img_path = os.path.join(root_dir, 'images', 'Fractured', filename)
+        if not os.path.exists(img_path):
+            continue
+
+        img = cv2.imread(img_path)
+        if img is None:
+            continue
+        
+        h, w = img.shape[:2]
+
+        mask = np.zeros((h, w), dtype=np.uint8)
+
+        if img_id in id_to_anns:
+            for pols in id_to_anns[img_id]:
+                for poly in pols:
+                    pts = np.array(poly).reshape((-1, 1, 2)).astype(np.int32)
+                    cv2.fillPoly(mask, [pts], 1)
+        
+        cv2.imwrite(save_path, mask * 255)
+
 if __name__ == "__main__":
 
     # create_dataset('train', mode='augmented')
-    create_dataset('train', mode='original_resized')
-    create_dataset('valid', mode='original_resized')
-    create_dataset('test',  mode='original_resized')
+    # create_dataset('train', mode='original_resized')
+    # create_dataset('valid', mode='original_resized')
+    # create_dataset('test',  mode='original_resized')
+    generate_original_masks()
