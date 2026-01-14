@@ -22,12 +22,12 @@ aug_pipeline = A.Compose([
 
     # Resize preserving aspect ratio
     A.LongestMaxSize(max_size=target_size),
-    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT)
+    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT, position='center')
 ])
 
 resize_pipeline = A.Compose([
     A.LongestMaxSize(max_size=target_size),
-    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT)
+    A.PadIfNeeded(min_height=target_size, min_width=target_size, border_mode=cv2.BORDER_CONSTANT, position='center')
 ])
 
 def load_coco_data(root_dir):
@@ -185,8 +185,8 @@ def generate_original_masks():
 
 if __name__ == "__main__":
 
-    # create_dataset('train', mode='augmented')
-    # create_dataset('train', mode='original_resized')
-    # create_dataset('valid', mode='original_resized')
-    # create_dataset('test',  mode='original_resized')
+    create_dataset('train', mode='augmented')
+    create_dataset('train', mode='original_resized')
+    create_dataset('valid', mode='original_resized')
+    create_dataset('test',  mode='original_resized')
     generate_original_masks()
