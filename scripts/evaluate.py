@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from medpy.metric.binary import hd95
+from sklearn.metrics import roc_auc_score
 from thop import profile
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
@@ -15,7 +16,135 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print(f"Using {device}")
 root_dir = 'data/FracAtlas'
 test_csv_path = 'data/FracAtlas/processed/original/test.csv'
+processed_dir = 'data/FracAtlas/processed/original/test'
 high_res_mask_dir = 'data/FracAtlas/masks/Fractured'
 target_size = 512
 
+def get_inverse_transform_params(orig_h, orig_w, target_size=512):
+    
+    scale = target_size / max(orig_h, orig_w)
+    new_h, new_w = int(orig_h * scale), int(orig_w * scale)
 
+    # Total padding needed, in accordance with albumentations 'pad' source code
+    pad_h = target_size - new_h
+    pad_w = target_size - new_w
+
+    pad_top = pad_h // 2
+    pad_bottom = pad_h - pad_top
+
+    pad_left = pad_w // 2
+    pad_right = pad_w - pad_left
+
+    return new_h, new_w, pad_top, pad_bottom, pad_left, pad_right
+
+def evaluate_model(model, model_name="TestModel"):
+    
+    model.eval()
+    model.to(device)
+
+    if not os.path.exists(test_csv_path):
+        raise FileNotFoundError(f"Test CSV not found at {test_csv_path}")
+    
+    test_df = pd.read_csv(test_csv_path)
+    loss_fn = nn.BCEWithLogitsLoss()
+
+    # Static metrics
+    print(f"Calculating GFLOPS and Parameters for {model_name}")
+    dummy_input = torch.randn(1, 3, target_size, target_size).to(device)
+    
+    try:
+        flops, params = profile(model, inputs=(dummy_input,), verbose=False)
+        gflops = flops / 1e9
+        print(f"GFLOPS: {gflops:.4f} | Parameters: {params:,.0f}")
+    except Exception as e:
+        print(f"GFLOPS failed: {e}")
+        gflops, params = 0, 0
+
+    # Dynamic metrics 
+    total_iou = []
+    total_dice = []
+    total_acc = []
+    total_hd95 = []
+    total_loss = []
+
+    # Global pools for AUC (Micro-Average)
+    global_probs = []
+    global_targets = []
+
+    transform_input = A.Compose({
+        A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+        ToTensorV2()
+    })
+
+    print(f"Starting evaluation on {len(test_df)} images")
+
+    with torch.no_grad():
+        for _, row in tqdm(test_df.iterrows(), total=len(test_df)):
+
+            img_name = row['image_id']
+            mask_name = row['mask_file']
+            orig_source = row['original_source']
+            
+            # for measuring loss on 512 x 512 resized images
+            proc_img_path = os.path.join(processed_dir, 'images', img_name)
+            proc_mask_path = os.path.join(processed_dir, 'masks', mask_name)
+
+            # for measuring IoU, Dice and more, on the original resolution images
+            high_res_name = os.path.splitext(orig_source)[0] + '.png'
+            high_res_path = os.path.join(high_res_mask_dir, high_res_name)
+
+            if not os.path.exists(proc_img_path) or not os.path.exists(high_res_path):
+                continue
+
+            img_512 = cv2.imread(proc_img_path)
+            img_512 = cv2.cvtColor(img_512, cv2.COLOR_BGR2RGB)
+
+            mask_512 = cv2.imread(proc_mask_path, cv2.IMREAD_GRAYSCALE)
+            mask_512 = (mask_512 > 127).astype(np.float32)
+
+            mask_orig = cv2.imread(high_res_path, cv2.IMREAD_GRAYSCALE)
+            mask_orig = (mask_orig > 127).astype(np.uint8)
+
+            orig_h, orig_w = mask_orig.shape[:2]
+
+            input_tensor = transform_input(image=img_512)['image'].unsqueeze(0).to(device)
+            target_tensor = torch.from_numpy(mask_512).float().unsqueeze(0).unsqueeze(0).to(device)
+
+            # Inference 
+            logits = model(input_tensor)
+            loss_val = loss_fn(logits, target_tensor)
+            total_loss.append(loss_val.item())
+
+            # Probabilities (for AUC)
+            probs_512 = torch.sigmoid(logits).cpu().numpy()[0, 0]
+
+            # Inverse transform and upsampling
+            new_h, new_w, p_top, p_btm, p_l, p_r = get_inverse_transform_params(orig_h, orig_w, target_size)  
+
+            crop_h = target_size - p_btm
+            crop_w = target_size - p_r
+            probs_cropped = probs_512[p_top:crop_h, p_l:crop_w]
+
+            probs_high_res = cv2.resize(probs_cropped, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST).astype(np.uint8)
+
+            global_probs.append(probs_high_res.flatten())
+            global_targets.append(mask_orig.flatten())
+
+            pred_high_res = (probs_high_res > 0.5).astype(np.uint8)
+
+            # IoU
+            intersection = np.sum(probs_high_res * mask_orig)
+            pred_area = np.sum(probs_high_res)
+            gt_area = np.sum(mask_orig)
+            union = pred_area + gt_area - intersection
+
+            iou = (intersection + 1e-9) / (union + 1e-6)
+            total_iou.append(iou)
+
+            # Dice
+            dice = (2 * intersection + 1e-6) / (pred_area + gt_area + 1e-6)
+            total_dice.append(dice)
+
+            # Accuracy
+            acc = np.sum(probs_high_res == mask_orig) / (orig_h * orig_w)
+            total_acc.append(acc)
