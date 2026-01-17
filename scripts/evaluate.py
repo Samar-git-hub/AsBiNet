@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
 import numpy as np
 import cv2
 import os
@@ -17,7 +16,7 @@ print(f"Using {device}")
 root_dir = 'data/FracAtlas'
 test_csv_path = 'data/FracAtlas/processed/original/test.csv'
 processed_dir = 'data/FracAtlas/processed/original/test'
-high_res_mask_dir = 'data/FracAtlas/masks/Fractured'
+orig_res_mask_dir = 'data/FracAtlas/masks/Fractured'
 target_size = 512
 
 def get_inverse_transform_params(orig_h, orig_w, target_size=512):
@@ -71,10 +70,10 @@ def evaluate_model(model, model_name="TestModel"):
     global_probs = []
     global_targets = []
 
-    transform_input = A.Compose({
+    transform_input = A.Compose([
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ToTensorV2()
-    })
+    ])
 
     print(f"Starting evaluation on {len(test_df)} images")
 
@@ -90,10 +89,10 @@ def evaluate_model(model, model_name="TestModel"):
             proc_mask_path = os.path.join(processed_dir, 'masks', mask_name)
 
             # for measuring IoU, Dice and more, on the original resolution images
-            high_res_name = os.path.splitext(orig_source)[0] + '.png'
-            high_res_path = os.path.join(high_res_mask_dir, high_res_name)
+            orig_res_name = os.path.splitext(orig_source)[0] + '.png'
+            orig_res_path = os.path.join(orig_res_mask_dir, orig_res_name)
 
-            if not os.path.exists(proc_img_path) or not os.path.exists(high_res_path):
+            if not os.path.exists(proc_img_path) or not os.path.exists(orig_res_path):
                 continue
 
             img_512 = cv2.imread(proc_img_path)
@@ -102,7 +101,7 @@ def evaluate_model(model, model_name="TestModel"):
             mask_512 = cv2.imread(proc_mask_path, cv2.IMREAD_GRAYSCALE)
             mask_512 = (mask_512 > 127).astype(np.float32)
 
-            mask_orig = cv2.imread(high_res_path, cv2.IMREAD_GRAYSCALE)
+            mask_orig = cv2.imread(orig_res_path, cv2.IMREAD_GRAYSCALE)
             mask_orig = (mask_orig > 127).astype(np.uint8)
 
             orig_h, orig_w = mask_orig.shape[:2]
@@ -125,16 +124,16 @@ def evaluate_model(model, model_name="TestModel"):
             crop_w = target_size - p_r
             probs_cropped = probs_512[p_top:crop_h, p_l:crop_w]
 
-            probs_high_res = cv2.resize(probs_cropped, (orig_w, orig_h), interpolation=cv2.INTER_NEAREST).astype(np.uint8)
+            probs_orig_res = cv2.resize(probs_cropped, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
 
-            global_probs.append(probs_high_res.flatten())
+            global_probs.append(probs_orig_res.flatten())
             global_targets.append(mask_orig.flatten())
 
-            pred_high_res = (probs_high_res > 0.5).astype(np.uint8)
+            pred_orig_res = (probs_orig_res > 0.5).astype(np.uint8)
 
             # IoU
-            intersection = np.sum(probs_high_res * mask_orig)
-            pred_area = np.sum(probs_high_res)
+            intersection = np.sum(pred_orig_res * mask_orig)
+            pred_area = np.sum(pred_orig_res)
             gt_area = np.sum(mask_orig)
             union = pred_area + gt_area - intersection
 
@@ -146,5 +145,61 @@ def evaluate_model(model, model_name="TestModel"):
             total_dice.append(dice)
 
             # Accuracy
-            acc = np.sum(probs_high_res == mask_orig) / (orig_h * orig_w)
+            acc = np.sum(pred_orig_res == mask_orig) / (orig_h * orig_w)
             total_acc.append(acc)
+
+            # HD95
+            if pred_area > 0 and gt_area > 0:
+                
+                val_hd95 = hd95(pred_orig_res, mask_orig, voxelspacing=None)
+                total_hd95.append(val_hd95)
+
+            elif pred_area == 0 and gt_area == 0:
+
+                total_hd95.append(0.0)
+
+            else:
+
+                total_hd95.append(np.sqrt(orig_h**2 + orig_w**2))
+
+            del probs_orig_res, pred_orig_res, probs_cropped
+        
+        # AUC calculation
+        try:
+
+            all_probs = np.concatenate(global_probs)
+            all_targets = np.concatenate(global_targets)
+
+            del global_probs, global_targets
+
+            global_auc = roc_auc_score(all_targets, all_probs)
+        
+        except Exception as e:
+            print(f"AUC calculation failed: {e}")
+            global_auc = 0.0
+
+        
+        results = {
+            "Model": model_name,
+            "Loss": np.mean(total_loss),
+            "IoU": np.mean(total_iou),
+            "Dice": np.mean(total_dice),
+            "HD95": np.mean(total_hd95),
+            "Accuracy": np.mean(total_acc),
+            "AUC": global_auc,
+            "GFLOPS": gflops,
+            "Params": params
+        }
+
+        print(f"Final Results for {model_name}:")
+        print(f"BCE Loss:  {results['Loss']:.4f}")
+        print(f"IoU:       {results['IoU']:.4f}")
+        print(f"Dice:      {results['Dice']:.4f}")
+        print(f"HD95:      {results['HD95']:.2f} px")
+        print(f"Accuracy:  {results['Accuracy']:.4f}")
+        print(f"AUC:       {results['AUC']:.4f}")
+        print(f"GFLOPS:    {results['GFLOPS']:.4f}")
+        print(f"Params:    {results['Params']:,.0f}")
+
+if __name__ == "__main__":
+    pass

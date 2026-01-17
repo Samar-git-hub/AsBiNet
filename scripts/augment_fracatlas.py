@@ -124,6 +124,7 @@ def create_dataset(split_name, mode='original_resized'):
             transformed = pipeline(image=image, mask=mask)
             trans_img = transformed['image']
             trans_mask = transformed['mask']
+            trans_mask = (trans_mask > 0.5).astype(np.uint8)
 
             if mode == 'augmented':
                 new_filename = f"{os.path.splitext(filename)[0]}_aug_{i}.jpg"
