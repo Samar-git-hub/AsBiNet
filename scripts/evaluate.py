@@ -45,7 +45,6 @@ def evaluate_model(model, model_name="TestModel"):
         raise FileNotFoundError(f"Test CSV not found at {test_csv_path}")
     
     test_df = pd.read_csv(test_csv_path)
-    loss_fn = nn.BCEWithLogitsLoss()
 
     # Static metrics
     print(f"Calculating GFLOPS and Parameters for {model_name}")
@@ -64,7 +63,6 @@ def evaluate_model(model, model_name="TestModel"):
     total_dice = []
     total_acc = []
     total_hd95 = []
-    total_loss = []
 
     # Global pools for AUC (Micro-Average)
     global_probs = []
@@ -81,12 +79,10 @@ def evaluate_model(model, model_name="TestModel"):
         for _, row in tqdm(test_df.iterrows(), total=len(test_df)):
 
             img_name = row['image_id']
-            mask_name = row['mask_file']
             orig_source = row['original_source']
             
-            # for measuring loss on 512 x 512 resized images
+            # loading processed image
             proc_img_path = os.path.join(processed_dir, 'images', img_name)
-            proc_mask_path = os.path.join(processed_dir, 'masks', mask_name)
 
             # for measuring IoU, Dice and more, on the original resolution images
             orig_res_name = os.path.splitext(orig_source)[0] + '.png'
@@ -98,21 +94,18 @@ def evaluate_model(model, model_name="TestModel"):
             img_512 = cv2.imread(proc_img_path)
             img_512 = cv2.cvtColor(img_512, cv2.COLOR_BGR2RGB)
 
-            mask_512 = cv2.imread(proc_mask_path, cv2.IMREAD_GRAYSCALE)
-            mask_512 = (mask_512 > 127).astype(np.float32)
-
             mask_orig = cv2.imread(orig_res_path, cv2.IMREAD_GRAYSCALE)
             mask_orig = (mask_orig > 127).astype(np.uint8)
 
             orig_h, orig_w = mask_orig.shape[:2]
 
             input_tensor = transform_input(image=img_512)['image'].unsqueeze(0).to(device)
-            target_tensor = torch.from_numpy(mask_512).float().unsqueeze(0).unsqueeze(0).to(device)
 
             # Inference 
             logits = model(input_tensor)
-            loss_val = loss_fn(logits, target_tensor)
-            total_loss.append(loss_val.item())
+
+            if isinstance(logits, dict):
+                logits = logits['out']
 
             # Probabilities (for AUC)
             probs_512 = torch.sigmoid(logits).cpu().numpy()[0, 0]
@@ -181,7 +174,6 @@ def evaluate_model(model, model_name="TestModel"):
         
         results = {
             "Model": model_name,
-            "Loss": np.mean(total_loss),
             "IoU": np.mean(total_iou),
             "Dice": np.mean(total_dice),
             "HD95": np.mean(total_hd95),
@@ -192,7 +184,6 @@ def evaluate_model(model, model_name="TestModel"):
         }
 
         print(f"Final Results for {model_name}:")
-        print(f"BCE Loss:  {results['Loss']:.4f}")
         print(f"IoU:       {results['IoU']:.4f}")
         print(f"Dice:      {results['Dice']:.4f}")
         print(f"HD95:      {results['HD95']:.2f} px")
