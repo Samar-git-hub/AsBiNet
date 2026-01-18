@@ -1,0 +1,185 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large
+from torchvision.models import MobileNet_V3_Large_Weights
+import os
+import numpy as np
+from tqdm import tqdm
+import time
+import pandas as pd
+
+from preprocess_fracatlas import FracAtlasPipeline
+
+config = {
+    "device": 'cuda' if torch.cuda.is_available() else 'cpu',
+    "root_dir": 'data/FracAtlas',
+    "save_dir": 'experiments/DeepLabV3_MobileNetV3',
+    "epochs": 50,
+    "batch_size": 8,
+    "learning_rate": 0.001,
+    "num_workers": 2,
+    "lr_factor": 0.9,
+    "lr_patience": 5
+}
+
+print(f"Using {config['device']}")
+
+def get_model():
+    print("Loading DeepLabV3 + MobileNetV3 Large")
+
+    # Using ImageNet pretrained weights
+    weights_backbone = MobileNet_V3_Large_Weights.IMAGENET1K_V1
+
+    model = deeplabv3_mobilenet_v3_large(
+        weights=None,
+        weights_backbone=weights_backbone,
+        aux_loss=True
+    )
+
+    # Replacing 21 class heads with 1 class head (fracture vs background)
+    model.classifier[4] = nn.Conv2d(256, 1, kernel_size=(1,1), stride=(1,1))
+
+    # Auxiliary classifier head mapped to 1 channel 
+    aux_in_channels = model.aux_classifier[4].in_channels
+    model.aux_classifier[4] = nn.Conv2d(aux_in_channels, 1, kernel_size=(1, 1), stride=(1, 1))
+
+    return model
+
+def train_one_epoch(model, loader, optimizer, loss_fn, device):
+    model.train()
+    running_loss = 0.0
+
+    loop = tqdm(loader, desc="Training", leave=False)
+
+    for batch in loop:
+        
+        images = batch['image'].to(device)
+        masks = batch['mask'].to(device)
+
+        optimizer.zero_grad()
+
+        outputs = model(images)
+        logits = outputs['out']
+        aux_logits = outputs['aux']
+
+        loss_main = loss_fn(logits, masks)
+        loss_aux = loss_fn(aux_logits, masks)
+
+        # Auxiliary loss toggle
+        loss = loss_main + (0.5 * loss_aux)
+
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        loop.set_postfix(loss=loss.item())
+    
+    return running_loss / len(loader)
+
+def validate(model, loader, loss_fn, device):
+    
+    model.eval()
+    running_loss = 0.0
+    total_iou_score = 0.0
+    total_images = 0
+
+    with torch.no_grad():
+
+        for batch in loader:
+            
+            images = batch['image'].to(device)
+            masks = batch['mask'].to(device)
+
+            outputs = model(images)
+            logits = outputs['out']
+
+            loss = loss_fn(logits, masks)
+            running_loss += loss.item()
+
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).float()
+
+            preds_flat = preds.view(preds.size(0), -1)
+            masks_flat = masks.view(masks.size(0), -1)
+
+            intersection = (preds_flat * masks_flat).sum(dim=1)
+            union = preds_flat.sum(dim=1) + masks_flat.sum(dim=1) - intersection
+
+            batch_ious = (intersection + 1e-6) / (union + 1e-6)
+
+            total_iou_score += batch_ious.sum().item()
+            total_images += images.size(0)
+
+    avg_loss = running_loss / len(loader)
+    avg_iou = total_iou_score / total_images
+
+    return avg_loss, avg_iou
+
+def main():
+    
+    os.makedirs(config['save_dir'], exist_ok=True)
+    mode = 'original_resized'
+
+    print(f"Initializing data using {mode} data")
+    train_dataset = FracAtlasPipeline(split='train', mode=mode)
+    valid_dataset = FracAtlasPipeline(split='valid', mode=mode)
+
+    train_loader = DataLoader(train_dataset, batch_size=config['batch_size'],
+                              shuffle=True, num_workers=config['num_workers'], pin_memory=True)
+
+    valid_loader = DataLoader(valid_dataset, batch_size=config['batch_size'],
+                              shuffle=False, num_workers=config['num_workers'], pin_memory=True)
+
+    model = get_model().to(config['device'])
+    optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
+    loss_fn = nn.BCEWithLogitsLoss()
+
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=config['lr_factor'], patience=config['lr_patience']
+    )
+
+    best_iou = 0.0
+    start_time = time.time()
+
+    log_path = os.path.join(config['save_dir'], 'training_log.csv')
+    if not os.path.exists(log_path):
+        pd.DataFrame(columns=['Epoch', 'Train_Loss', 'Val_Loss', 'Val_IoU', 'LR', 'Time']).to_csv(log_path, index=False)
+    
+    print(f"Training for {config['epochs']} epochs")
+    
+    for epoch in range(1, config['epochs'] + 1):
+        
+        epoch_start = time.time()
+        train_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, config['device'])
+        val_loss, val_iou = validate(model, valid_loader, loss_fn, config['device'])
+        
+        scheduler.step(val_loss)
+        current_lr = optimizer.param_groups[0]['lr']
+
+        if val_iou > best_iou:
+            best_iou = val_iou
+            save_path = os.path.join(config['save_dir'], "best_model.pth")
+            torch.save(model.state_dict(), save_path)
+            print(f"New best average validation IoU: {best_iou:.4f}")
+        
+        epoch_time = time.time() - epoch_start
+        print(f"Epoch {epoch}/{config['epochs']} | Train Loss: {train_loss:.4f} | Validation Loss: {val_loss} | Validation IoU: {val_iou} | Time: {epoch_time:.0f}s")
+
+        new_row = pd.DataFrame([{
+            'Epoch': epoch,
+            'Train_Loss': train_loss,
+            'Val_Loss': val_loss,
+            'Val_IoU': val_iou,
+            'LR': current_lr,
+            'Time': epoch_time
+        }])
+        new_row.to_csv(log_path, mode='a', header=False, index=False)
+    
+    total_time = (time.time() - start_time) / 60
+    print(f"\nTraining Complete in {total_time:.2f} minutes")
+    print(f"Best Validation Avg IoU: {best_iou:.4f}")
+
+if __name__ == "__main__":
+    main()
