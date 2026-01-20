@@ -15,7 +15,7 @@ from preprocess_fracatlas import FracAtlasPipeline
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/DeepLabV3_MobileNetV3_COCO_ComboLoss',
+    "save_dir": 'experiments/DeepLabV3_MobileNetV3_ComboLoss',
     "epochs": 50,
     "batch_size": 8,
     "learning_rate": 0.001,
@@ -45,11 +45,11 @@ def get_model():
     print("Loading DeepLabV3 + MobileNetV3 Large")
 
     # Using COCO pretrained weights
-    weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
+    weights_backbone = MobileNet_V3_Large_Weights.IMAGENET1K_V1
 
     model = deeplabv3_mobilenet_v3_large(
-        weights=weights,
-        weights_backbone=None,
+        weights=None,
+        weights_backbone=weights_backbone,
         aux_loss=True
     )
 
