@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large
+from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLabV3_MobileNet_V3_Large_Weights
 from torchvision.models import MobileNet_V3_Large_Weights
 import os
 import numpy as np
@@ -15,7 +15,7 @@ from preprocess_fracatlas import FracAtlasPipeline
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/DeepLabV3_MobileNetV3',
+    "save_dir": 'experiments/DeepLabV3_MobileNetV3_COCO',
     "epochs": 50,
     "batch_size": 8,
     "learning_rate": 0.001,
@@ -29,12 +29,12 @@ print(f"Using {config['device']}")
 def get_model():
     print("Loading DeepLabV3 + MobileNetV3 Large")
 
-    # Using ImageNet pretrained weights
-    weights_backbone = MobileNet_V3_Large_Weights.IMAGENET1K_V1
+    # Using COCO pretrained weights
+    weights = DeepLabV3_MobileNet_V3_Large_Weights.DEFAULT
 
     model = deeplabv3_mobilenet_v3_large(
-        weights=None,
-        weights_backbone=weights_backbone,
+        weights=weights,
+        weights_backbone=None,
         aux_loss=True
     )
 
