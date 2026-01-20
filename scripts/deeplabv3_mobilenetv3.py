@@ -15,7 +15,7 @@ from preprocess_fracatlas import FracAtlasPipeline
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/DeepLabV3_MobileNetV3_COCO',
+    "save_dir": 'experiments/DeepLabV3_MobileNetV3_COCO_ComboLoss',
     "epochs": 50,
     "batch_size": 8,
     "learning_rate": 0.001,
@@ -25,6 +25,21 @@ config = {
 }
 
 print(f"Using {config['device']}")
+
+class DiceLoss(nn.Module):
+    def __init__(self, smooth=1e-6):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+    
+    def forward(self, logits, targets):
+        probs = torch.sigmoid(logits)
+        probs = probs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (probs * targets).sum()
+        dice = (2. * intersection + self.smooth) / (probs.sum() + targets.sum() + self.smooth)
+
+        return 1 - dice
 
 def get_model():
     print("Loading DeepLabV3 + MobileNetV3 Large")
@@ -47,7 +62,7 @@ def get_model():
 
     return model
 
-def train_one_epoch(model, loader, optimizer, loss_fn, device):
+def train_one_epoch(model, loader, optimizer, criterion_bce, criterion_dice, device):
     model.train()
     running_loss = 0.0
 
@@ -64,8 +79,15 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device):
         logits = outputs['out']
         aux_logits = outputs['aux']
 
-        loss_main = loss_fn(logits, masks)
-        loss_aux = loss_fn(aux_logits, masks)
+        # Main Loss
+        loss_bce_main = criterion_bce(logits, masks)
+        loss_dice_main = criterion_dice(logits, masks)
+        loss_main = 0.5 * loss_bce_main + 0.5 * loss_dice_main
+
+        # Auxiliary Loss
+        loss_bce_aux = criterion_bce(aux_logits, masks)
+        loss_dice_aux = criterion_dice(aux_logits, masks)
+        loss_aux = 0.5 * loss_bce_aux + 0.5 * loss_dice_aux
 
         # Auxiliary loss toggle
         loss = loss_main + (0.5 * loss_aux)
@@ -78,7 +100,7 @@ def train_one_epoch(model, loader, optimizer, loss_fn, device):
     
     return running_loss / len(loader)
 
-def validate(model, loader, loss_fn, device):
+def validate(model, loader, criterion_bce, criterion_dice, device):
     
     model.eval()
     running_loss = 0.0
@@ -95,7 +117,10 @@ def validate(model, loader, loss_fn, device):
             outputs = model(images)
             logits = outputs['out']
 
-            loss = loss_fn(logits, masks)
+            loss_bce = criterion_bce(logits, masks)
+            loss_dice = criterion_dice(logits, masks)
+            loss = 0.5 * loss_bce + 0.5 * loss_dice
+
             running_loss += loss.item()
 
             probs = torch.sigmoid(logits)
@@ -134,7 +159,9 @@ def main():
 
     model = get_model().to(config['device'])
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
-    loss_fn = nn.BCEWithLogitsLoss()
+    
+    criterion_bce = nn.BCEWithLogitsLoss()
+    criterion_dice = DiceLoss()
 
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=config['lr_factor'], patience=config['lr_patience']
@@ -152,8 +179,8 @@ def main():
     for epoch in range(1, config['epochs'] + 1):
         
         epoch_start = time.time()
-        train_loss = train_one_epoch(model, train_loader, optimizer, loss_fn, config['device'])
-        val_loss, val_iou = validate(model, valid_loader, loss_fn, config['device'])
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion_bce, criterion_dice, config['device'])
+        val_loss, val_iou = validate(model, valid_loader,  criterion_bce, criterion_dice, config['device'])
         
         scheduler.step(val_loss)
         current_lr = optimizer.param_groups[0]['lr']
