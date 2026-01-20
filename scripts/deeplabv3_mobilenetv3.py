@@ -15,7 +15,7 @@ from preprocess_fracatlas import FracAtlasPipeline
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/DeepLabV3_MobileNetV3_ComboLoss',
+    "save_dir": 'experiments/DeepLabV3_MobileNetV3_ComboLoss_Augmented',
     "epochs": 50,
     "batch_size": 8,
     "learning_rate": 0.001,
@@ -145,11 +145,10 @@ def validate(model, loader, criterion_bce, criterion_dice, device):
 def main():
     
     os.makedirs(config['save_dir'], exist_ok=True)
-    mode = 'original_resized'
 
-    print(f"Initializing data using {mode} data")
-    train_dataset = FracAtlasPipeline(split='train', mode=mode)
-    valid_dataset = FracAtlasPipeline(split='valid', mode=mode)
+    print(f"Initializing data using 'augmented' data")
+    train_dataset = FracAtlasPipeline(split='train', mode='augmented')
+    valid_dataset = FracAtlasPipeline(split='valid', mode='original_resized')
 
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'],
                               shuffle=True, num_workers=config['num_workers'], pin_memory=True)
