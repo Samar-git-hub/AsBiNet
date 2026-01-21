@@ -21,7 +21,7 @@ class FracAtlasPipeline(Dataset):
         csv_path = os.path.join(self.data_dir, f'{split}.csv')
 
         if not os.path.exists(csv_path):
-            raise FileNotFoundError(f"CSV not found at {csv_path}. Create the CSV using augment_fracatlas.py")
+            raise FileNotFoundError(f"CSV not found at {csv_path}. Create the CSV using augment.py")
         
         self.df = pd.read_csv(csv_path)
 

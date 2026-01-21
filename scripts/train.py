@@ -2,20 +2,22 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLabV3_MobileNet_V3_Large_Weights
-from torchvision.models import MobileNet_V3_Large_Weights
 import os
 import numpy as np
 from tqdm import tqdm
 import time
 import pandas as pd
+import sys
 
-from preprocess_fracatlas import FracAtlasPipeline
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.data_pipeline.dataset import FracAtlasPipeline
+from src.models.deeplabv3 import get_deeplab_model
 
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/DeepLabV3_MobileNetV3_ComboLoss_Augmented',
+    "save_dir": 'experiments/Exp5_DeepLab_MobileNet_ImageNet_CombinedLoss_Augmented',
     "epochs": 50,
     "batch_size": 8,
     "learning_rate": 0.001,
@@ -40,27 +42,6 @@ class DiceLoss(nn.Module):
         dice = (2. * intersection + self.smooth) / (probs.sum() + targets.sum() + self.smooth)
 
         return 1 - dice
-
-def get_model():
-    print("Loading DeepLabV3 + MobileNetV3 Large")
-
-    # Using COCO pretrained weights
-    weights_backbone = MobileNet_V3_Large_Weights.IMAGENET1K_V1
-
-    model = deeplabv3_mobilenet_v3_large(
-        weights=None,
-        weights_backbone=weights_backbone,
-        aux_loss=True
-    )
-
-    # Replacing 21 class heads with 1 class head (fracture vs background)
-    model.classifier[4] = nn.Conv2d(256, 1, kernel_size=(1,1), stride=(1,1))
-
-    # Auxiliary classifier head mapped to 1 channel 
-    aux_in_channels = model.aux_classifier[4].in_channels
-    model.aux_classifier[4] = nn.Conv2d(aux_in_channels, 1, kernel_size=(1, 1), stride=(1, 1))
-
-    return model
 
 def train_one_epoch(model, loader, optimizer, criterion_bce, criterion_dice, device):
     model.train()
@@ -156,7 +137,7 @@ def main():
     valid_loader = DataLoader(valid_dataset, batch_size=config['batch_size'],
                               shuffle=False, num_workers=config['num_workers'], pin_memory=True)
 
-    model = get_model().to(config['device'])
+    model = get_deeplab_model(config['device'], model_weights = "ImageNet")
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
     
     criterion_bce = nn.BCEWithLogitsLoss()
