@@ -19,14 +19,15 @@ config = {
     "root_dir": 'data/FracAtlas',
     "save_dir": 'experiments/Exp5_DeepLab_MobileNet_ImageNet_CombinedLoss_Augmented',
     "epochs": 50,
-    "batch_size": 8,
+    "resolution": 1024,
+    "batch_size": 2,
     "learning_rate": 0.001,
     "num_workers": 2,
     "lr_factor": 0.9,
     "lr_patience": 5
 }
 
-print(f"Using {config['device']}")
+print(f"Using {config['device']} | Resolution: {config['resolution']} | Batch Size: {config['batch_size']}")
 
 class DiceLoss(nn.Module):
     def __init__(self, smooth=1e-6):
@@ -128,8 +129,8 @@ def main():
     os.makedirs(config['save_dir'], exist_ok=True)
 
     print(f"Initializing data using 'augmented' data")
-    train_dataset = FracAtlasPipeline(split='train', mode='augmented')
-    valid_dataset = FracAtlasPipeline(split='valid', mode='original_resized')
+    train_dataset = FracAtlasPipeline(split='train', mode='augmented', resolution=config['resolution'])
+    valid_dataset = FracAtlasPipeline(split='valid', mode='original_resized', resolution=config['resolution'])
 
     train_loader = DataLoader(train_dataset, batch_size=config['batch_size'],
                               shuffle=True, num_workers=config['num_workers'], pin_memory=True)

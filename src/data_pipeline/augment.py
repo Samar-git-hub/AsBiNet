@@ -7,11 +7,18 @@ import json
 from tqdm import tqdm
 
 root_dir = 'data/FracAtlas'
-aug_output_dir = 'data/FracAtlas/Augmented'
-orig_resized_dir = 'data/FracAtlas/processed/original'
 
 multiplier = 50
-target_size = 512
+target_size = 1024
+
+if target_size == 1024:
+    aug_output_dir = 'data/FracAtlas/Augmented_1024'
+    orig_resized_dir = 'data/FracAtlas/processed/original_1024'
+else:
+    aug_output_dir = 'data/FracAtlas/Augmented'
+    orig_resized_dir = 'data/FracAtlas/processed/original'
+
+print(f"Target Resolution: {target_size}x{target_size}")
 
 aug_pipeline = A.Compose([
     A.HorizontalFlip(p=0.5),

@@ -8,20 +8,25 @@ import pandas as pd
 from torch.utils.data import Dataset
 
 class FracAtlasPipeline(Dataset):
-    def __init__(self, root_dir='data/FracAtlas', split='train', mode='original_resized'):
+    def __init__(self, root_dir='data/FracAtlas', split='train', mode='original_resized', resolution=512):
         self.root_dir = root_dir
         self.split = split
         self.mode = mode
 
-        if self.mode == 'augmented':
-            self.data_dir = os.path.join(root_dir, 'Augmented')
+        if resolution == 1024:
+            suffix = "_1024"
         else:
-            self.data_dir = os.path.join(root_dir, 'processed', 'original')
+            suffix = ""
+
+        if self.mode == 'augmented':
+            self.data_dir = os.path.join(root_dir, f'Augmented{suffix}')
+        else:
+            self.data_dir = os.path.join(root_dir, 'processed', f'original{suffix}')
 
         csv_path = os.path.join(self.data_dir, f'{split}.csv')
 
         if not os.path.exists(csv_path):
-            raise FileNotFoundError(f"CSV not found at {csv_path}. Create the CSV using augment.py")
+            raise FileNotFoundError(f"CSV not found at {csv_path}. Create the CSV using augment.py with target_size={resolution}")
         
         self.df = pd.read_csv(csv_path)
 
