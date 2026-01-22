@@ -63,6 +63,7 @@ def evaluate_model(model, model_name="TestModel"):
     total_dice = []
     total_acc = []
     total_hd95 = []
+    total_map50 = []
 
     # Global pools for AUC (Micro-Average)
     global_probs = []
@@ -133,6 +134,9 @@ def evaluate_model(model, model_name="TestModel"):
             iou = (intersection + 1e-9) / (union + 1e-6)
             total_iou.append(iou)
 
+            # mAP @ IoU = 0.5
+            total_map50.append(1.0 if iou >= 0.5 else 0.0)
+
             # Dice
             dice = (2 * intersection + 1e-6) / (pred_area + gt_area + 1e-6)
             total_dice.append(dice)
@@ -175,6 +179,7 @@ def evaluate_model(model, model_name="TestModel"):
         results = {
             "Model": model_name,
             "IoU": np.mean(total_iou),
+            "mAP@0.5": np.mean(total_map50),
             "Dice": np.mean(total_dice),
             "HD95": np.mean(total_hd95),
             "Accuracy": np.mean(total_acc),
@@ -184,13 +189,14 @@ def evaluate_model(model, model_name="TestModel"):
         }
 
         print(f"Final Results for {model_name}:")
-        print(f"IoU:       {results['IoU']:.4f}")
-        print(f"Dice:      {results['Dice']:.4f}")
-        print(f"HD95:      {results['HD95']:.2f} px")
-        print(f"Accuracy:  {results['Accuracy']:.4f}")
-        print(f"AUC:       {results['AUC']:.4f}")
-        print(f"GFLOPS:    {results['GFLOPS']:.4f}")
-        print(f"Params:    {results['Params']:,.0f}")
+        print(f"IoU:                {results['IoU']:.4f}")
+        print(f"mAP @ IoU = 0.5:    {results['mAP@0.5']:.4f}")
+        print(f"Dice:               {results['Dice']:.4f}")
+        print(f"HD95:               {results['HD95']:.2f} px")
+        print(f"Accuracy:           {results['Accuracy']:.4f}")
+        print(f"AUC:                {results['AUC']:.4f}")
+        print(f"GFLOPS:             {results['GFLOPS']:.4f}")
+        print(f"Params:             {results['Params']:,.0f}")
 
 if __name__ == "__main__":
     pass
