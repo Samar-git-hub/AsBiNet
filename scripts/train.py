@@ -17,7 +17,7 @@ from src.models.deeplabv3 import get_deeplab_model
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/Exp5_DeepLab_MobileNet_ImageNet_CombinedLoss_Augmented',
+    "save_dir": 'experiments/Exp6_DeepLab_MobileNet_ImageNet_1024',
     "epochs": 50,
     "resolution": 1024,
     "batch_size": 2,
@@ -63,13 +63,15 @@ def train_one_epoch(model, loader, optimizer, criterion_bce, criterion_dice, dev
 
         # Main Loss
         loss_bce_main = criterion_bce(logits, masks)
-        loss_dice_main = criterion_dice(logits, masks)
-        loss_main = 0.5 * loss_bce_main + 0.5 * loss_dice_main
+        # loss_dice_main = criterion_dice(logits, masks)
+        # loss_main = 0.5 * loss_bce_main + 0.5 * loss_dice_main
+        loss_main = loss_bce_main
 
         # Auxiliary Loss
         loss_bce_aux = criterion_bce(aux_logits, masks)
-        loss_dice_aux = criterion_dice(aux_logits, masks)
-        loss_aux = 0.5 * loss_bce_aux + 0.5 * loss_dice_aux
+        # loss_dice_aux = criterion_dice(aux_logits, masks)
+        # loss_aux = 0.5 * loss_bce_aux + 0.5 * loss_dice_aux
+        loss_aux = loss_bce_aux
 
         # Auxiliary loss toggle
         loss = loss_main + (0.5 * loss_aux)
@@ -100,8 +102,9 @@ def validate(model, loader, criterion_bce, criterion_dice, device):
             logits = outputs['out']
 
             loss_bce = criterion_bce(logits, masks)
-            loss_dice = criterion_dice(logits, masks)
-            loss = 0.5 * loss_bce + 0.5 * loss_dice
+            # loss_dice = criterion_dice(logits, masks)
+            # loss = 0.5 * loss_bce + 0.5 * loss_dice
+            loss = loss_bce
 
             running_loss += loss.item()
 
