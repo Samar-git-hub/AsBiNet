@@ -1,24 +1,24 @@
 import torch.nn as nn
-from torchvision.models.segmentation import deeplabv3_mobilenet_v3_large, DeepLabV3_MobileNet_V3_Large_Weights
-from torchvision.models import MobileNet_V3_Large_Weights
+from torchvision.models.segmentation import deeplabv3_resnet50, DeepLabV3_ResNet50_Weights
+from torchvision.models import ResNet50_Weights
 
 def get_deeplab_model(device, model_weights='ImageNet'):
 
-    print("Loading DeepLabV3 + MobileNetV3 Large")
+    print("Loading DeepLabV3 + ResNet50 Large")
 
     if model_weights == "ImageNet":
-        weights_backbone = MobileNet_V3_Large_Weights.IMAGENET1K_V1
+        weights_backbone = ResNet50_Weights.IMAGENET1K_V1
         weights = None
 
     elif model_weights == "COCO":
-        weights = DeepLabV3_MobileNet_V3_Large_Weights.COCO_WITH_VOC_LABELS_V1
+        weights = DeepLabV3_ResNet50_Weights.COCO_WITH_VOC_LABELS_V1
         weights_backbone = None
         
     else:
         weights = None
         weights_backbone = None
     
-    model = deeplabv3_mobilenet_v3_large(
+    model = deeplabv3_resnet50(
         weights=weights,
         weights_backbone=weights_backbone,
         aux_loss=True

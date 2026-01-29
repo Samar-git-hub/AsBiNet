@@ -17,7 +17,7 @@ from src.models.deeplabv3 import get_deeplab_model
 config = {
     "device": 'cuda' if torch.cuda.is_available() else 'cpu',
     "root_dir": 'data/FracAtlas',
-    "save_dir": 'experiments/Exp6_DeepLab_MobileNet_ImageNet_1024',
+    "save_dir": 'experiments/Exp6_DeepLab_ResNet50_ImageNet_1024',
     "epochs": 50,
     "resolution": 1024,
     "batch_size": 2,

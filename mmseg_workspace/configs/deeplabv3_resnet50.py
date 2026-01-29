@@ -1,6 +1,7 @@
 # Built for the MMEngine Runner class: https://github.com/open-mmlab/mmengine/blob/main/mmengine/runner/runner.py
 
 # Block 1: Runtime
+# Source: https://github.com/open-mmlab/mmsegmentation/blob/main/mmseg/configs/_base_/default_runtime.py
 
 default_scope = 'mmseg'
 env_cfg = dict(
@@ -151,12 +152,13 @@ optim_wrapper = dict(
 
 param_scheduler = [
     dict(
-        type='ReduceOnPlateau',
+        type='ReduceOnPlateauParamScheduler',
+        param_name='lr',
         monitor='mIoU',
         rule='greater',
         factor=0.9,
         patience=5,
-        min_lr=1e-6,
+        min_value=1e-6,
         by_epoch=True
     )
 ]
